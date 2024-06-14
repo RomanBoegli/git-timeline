@@ -56,6 +56,13 @@ df.sort_values(by='date', inplace=True)
 end_date = df['date'].max()
 start_date = end_date - timedelta(days=7)
 
+# Generate hourly time labels between 05:00 and 22:00
+hourly_ticks = pd.date_range("05:00", "22:00", freq="h").strftime('%H:%M')
+all_possible_ticks = pd.date_range("05:00", "22:00", freq="1min").strftime('%H:%M')
+
+# Ensure all possible time ticks are included in the 'time' column
+df['time'] = pd.Categorical(df['time'], categories=all_possible_ticks, ordered=True)
+
 # Order the DataFrame by 'repo' alphabetically
 df = df.sort_values(by='repo')
 
@@ -72,7 +79,8 @@ fig.update_layout(
     yaxis_title='Time of Day',
     xaxis_rangeslider_visible=True,
     autosize=True,
-    xaxis=dict(range=[start_date, end_date])
+    xaxis=dict(range=[start_date, end_date]),
+    yaxis=dict(categoryorder='array', categoryarray=all_possible_ticks, tickvals=hourly_ticks)
 )
 
 # Remove text labels from the plot
