@@ -59,9 +59,6 @@ start_date = end_date - timedelta(days=7)
 # Order the DataFrame by 'repo' alphabetically
 df = df.sort_values(by='repo')
 
-# Apply symbol mapping to the DataFrame
-df['symbol'] = df['group'].map(symbol_map)
-
 # Create the interactive timeline plot with different marker symbols for groups
 accepted_symbols = ['circle', 'cross']
 fig = px.scatter(df, x='date', y='time', color='repo', symbol='group', symbol_sequence=accepted_symbols, 
