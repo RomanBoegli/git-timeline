@@ -29,26 +29,36 @@ def collect_commits(repos, branches, committers_patterns, time_back_scope):
         repo = Repo(repo_path)
         for branch in branches:
             if branch in repo.heads:
-                for commit in repo.iter_commits(branch):
-                    commit_time = datetime.fromtimestamp(commit.committed_date)
-                    committer_email = commit.committer.email
-                    if commit_time >= time_back_scope and 5 <= commit_time.hour <= 22:
-                        if any(pattern.match(committer_email) for pattern in committers_patterns):
-                            diff = commit.stats.total['lines']
-                            size_category = categorize_commit_size(diff)
-                            commits.append({
-                                'repo': os.path.basename(repo_path),  # Use the full repo name with base folder
-                                'committer': committer_email,
-                                'branch': branch,
-                                'hash': commit.hexsha,
-                                'message': commit.message,
-                                'date': commit_time,
-                                'time': commit_time.strftime('%H:%M'),
-                                'group': base_folder,  # Add the base folder as group
-                                'change_lines': diff,
-                                'change_size_cat': size_category
-                            })
+                commits.extend(process_branch(repo, branch, committers_patterns, time_back_scope, base_folder))
     return commits
+
+def process_branch(repo, branch, committers_patterns, time_back_scope, base_folder):
+    branch_commits = []
+    for commit in repo.iter_commits(branch):
+        commit_time = datetime.fromtimestamp(commit.committed_date)
+        if commit_time >= time_back_scope and 5 <= commit_time.hour <= 22:
+            if is_valid_committer(commit.committer.email, committers_patterns):
+                branch_commits.append(process_commit(commit, repo, base_folder))
+    return branch_commits
+
+def is_valid_committer(email, committers_patterns):
+    return any(pattern.match(email) for pattern in committers_patterns)
+
+def process_commit(commit, repo, base_folder):
+    diff = commit.stats.total['lines']
+    size_category = categorize_commit_size(diff)
+    return {
+        'repo': os.path.basename(repo.working_tree_dir),
+        'committer': commit.committer.email,
+        'branch': repo.active_branch.name,
+        'hash': commit.hexsha,
+        'message': commit.message,
+        'date': datetime.fromtimestamp(commit.committed_date),
+        'time': datetime.fromtimestamp(commit.committed_date).strftime('%H:%M'),
+        'group': base_folder,
+        'change_lines': diff,
+        'change_size_cat': size_category
+    }
 
 def categorize_commit_size(diff):
     if diff < 20:
