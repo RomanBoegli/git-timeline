@@ -1,8 +1,22 @@
 import os
+import json
 from git import Repo
 from datetime import datetime, timedelta
 import pandas as pd
 import plotly.express as px
+import re
+import webbrowser
+
+# Load configuration from JSON file
+with open('config.json') as config_file:
+    config = json.load(config_file)
+
+# Extract variables from configuration
+base_dirs = config['base_dirs']
+branches = config['branches']
+committers_patterns = [re.compile(pattern) for pattern in config['committers']]
+days = config['days']
+browser = config['browser']
 
 # Function to find all Git repositories in given base directories
 def find_git_repos(base_dirs):
@@ -17,15 +31,8 @@ def find_git_repos(base_dirs):
                 dirs.remove('.git')  # Prevents searching inside .git directories
     return repos
 
-# Base directories to search for Git repositories
-base_dirs = ['~/Documents/GitLab', '~/Documents/GitHub']
 repos = find_git_repos(base_dirs)
-
-# List of branch names to check
-branches = ['master', 'main']
-
-# Calculate the date 4 months ago
-time_back_scope = datetime.now() - timedelta(days=1*30)
+time_back_scope = datetime.now() - timedelta(days=days)
 
 commits = []
 for repo_name, repo_path, base_folder in repos:
@@ -34,30 +41,35 @@ for repo_name, repo_path, base_folder in repos:
         if branch in repo.heads:
             for commit in repo.iter_commits(branch):
                 commit_time = datetime.fromtimestamp(commit.committed_date)
-                if commit_time >= time_back_scope and 5 <= commit_time.hour <= 22: 
-                    diff = commit.stats.total['lines']
-                    if diff < 20:
-                        size_category = 'small'
-                    elif diff < 100:
-                        size_category = 'normal'
-                    else:
-                        size_category = 'big'
-                    commits.append({
-                        'repo': os.path.basename(repo_path),  # Use the full repo name with base folder
-                        'branch': branch,
-                        'hash': commit.hexsha,
-                        'message': commit.message,
-                        'date': commit_time,
-                        'time': commit_time.strftime('%H:%M'),
-                        'group': base_folder,  # Add the base folder as group
-                        'change_lines': diff,
-                        'change_size_cat': size_category
-                    })
+                committer_email = commit.committer.email
+                if commit_time >= time_back_scope and 5 <= commit_time.hour <= 22:
+                    if any(pattern.match(committer_email) for pattern in committers_patterns):
+                        diff = commit.stats.total['lines']
+                        if diff < 20:
+                            size_category = 'small'
+                        elif diff < 100:
+                            size_category = 'normal'
+                        else:
+                            size_category = 'big'
+                        commits.append({
+                            'repo': os.path.basename(repo_path),  # Use the full repo name with base folder
+                            'committer': committer_email,
+                            'branch': branch,
+                            'hash': commit.hexsha,
+                            'message': commit.message,
+                            'date': commit_time,
+                            'time': commit_time.strftime('%H:%M'),
+                            'group': base_folder,  # Add the base folder as group
+                            'change_lines': diff,
+                            'change_size_cat': size_category
+                        })
 
 # Convert commits list to DataFrame
 df = pd.DataFrame(commits)
 
-# Ensure the 'date' column is present and correctly formatted
+# Some checks
+if df.__len__ == 0:
+    raise KeyError("no relevant commits found")
 if 'date' not in df.columns:
     raise KeyError("'date' column is missing from the DataFrame")
 
@@ -87,7 +99,7 @@ accepted_symbols = ['circle', 'cross']
 fig = px.scatter(df, x='date', y='time', color='repo', symbol='group', symbol_sequence=accepted_symbols, size='change_size_num',
                  title='Commit History Timeline',
                  labels={'date': 'Date', 'time': 'Time of Day'},
-                 hover_data={'hash': True, 'branch': True, 'message': True, 'change_lines': True, 'change_size_cat': True})
+                 hover_data={'hash': True, 'committer': True,'branch': True, 'message': True, 'change_lines': True, 'change_size_cat': True})
 
 # Update layout for better readability and autosize
 fig.update_layout(
@@ -105,9 +117,12 @@ fig.update_layout(
 # Remove text labels from the plot
 fig.update_traces(selector=dict(mode='markers'))
 
-
 # Save the plot to an HTML file
 html_file_path = 'commit_history_timeline.html'
 fig.write_html(html_file_path)
 
 print(f"Timeline plot saved to {html_file_path}. Open this file in a web browser to view the interactive plot.")
+
+# Open the HTML file in the specified browser
+browser_path = webbrowser.get(browser)
+browser_path.open('file:///' + os.path.abspath(html_file_path))

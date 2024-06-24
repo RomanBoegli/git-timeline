@@ -1,0 +1,7 @@
+{
+      "base_dirs": ["~/Documents/GitLab", "~/Documents/GitHub"],
+      "branches": ["master", "main"],
+      "committers": ["(?i).*jondoe|jonny.*"],
+      "days": 30,
+      "browser": "safari"
+  }
