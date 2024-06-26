@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 commit_history_timeline.html
 .DS_Store
+execute.sh
