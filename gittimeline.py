@@ -23,32 +23,53 @@ def find_git_repos(base_dirs):
                 dirs.remove('.git')  # Prevents searching inside .git directories
     return repos
 
+def has_pending_changes(repo, branches):
+    """Check if a repo has uncommitted changes or unpushed commits."""
+    # Check for uncommitted changes (staged, unstaged, or untracked)
+    if repo.is_dirty(untracked_files=True):
+        return True
+    # Check for unpushed commits on any of the tracked branches
+    for branch in branches:
+        if branch in repo.heads:
+            local_branch = repo.heads[branch]
+            tracking = local_branch.tracking_branch()
+            if tracking is not None:
+                try:
+                    ahead = list(repo.iter_commits(f'{tracking.name}..{local_branch.name}'))
+                    if ahead:
+                        return True
+                except Exception:
+                    pass
+    return False
+
 def collect_commits(repos, branches, committers_patterns, time_back_scope):
     commits = []
     for repo_name, repo_path, base_folder in repos:
         repo = Repo(repo_path)
+        pending = has_pending_changes(repo, branches)
+        display_name = f"* {os.path.basename(repo.working_tree_dir)}" if pending else os.path.basename(repo.working_tree_dir)
         for branch in branches:
             if branch in repo.heads:
-                commits.extend(process_branch(repo, branch, committers_patterns, time_back_scope, base_folder))
+                commits.extend(process_branch(repo, branch, committers_patterns, time_back_scope, base_folder, display_name))
     return commits
 
-def process_branch(repo, branch, committers_patterns, time_back_scope, base_folder):
+def process_branch(repo, branch, committers_patterns, time_back_scope, base_folder, display_name=None):
     branch_commits = []
     for commit in repo.iter_commits(branch):
         commit_time = datetime.fromtimestamp(commit.committed_date)
         if commit_time >= time_back_scope and 5 <= commit_time.hour <= 22:
             if is_valid_committer(commit.committer.email, committers_patterns):
-                branch_commits.append(process_commit(commit, repo, base_folder))
+                branch_commits.append(process_commit(commit, repo, base_folder, display_name))
     return branch_commits
 
 def is_valid_committer(email, committers_patterns):
     return any(pattern.match(email) for pattern in committers_patterns)
 
-def process_commit(commit, repo, base_folder):
+def process_commit(commit, repo, base_folder, display_name=None):
     diff = commit.stats.total['lines']
     size_category = categorize_commit_size(diff)
     return {
-        'repo': os.path.basename(repo.working_tree_dir),
+        'repo': display_name if display_name else os.path.basename(repo.working_tree_dir),
         'committer': commit.committer.email,
         'branch': repo.active_branch.name,
         'hash': commit.hexsha,
@@ -82,8 +103,8 @@ def generate_plot(df):
     start_date = end_date - timedelta(days=8)
 
     # Generate hourly time labels between 05:00 and 22:00
-    hourly_ticks = pd.date_range("05:00", "20:00", freq="h").strftime('%H:%M')
-    all_possible_ticks = pd.date_range("05:00", "20:00", freq="1min").strftime('%H:%M')
+    hourly_ticks = pd.date_range("05:00", "23:00", freq="h").strftime('%H:%M')
+    all_possible_ticks = pd.date_range("05:00", "23:00", freq="1min").strftime('%H:%M')
 
     # Ensure all possible time ticks are included in the 'time' column
     df['time'] = pd.Categorical(df['time'], categories=all_possible_ticks, ordered=True)
@@ -138,6 +159,7 @@ def main():
     time_back_scope = datetime.now() - timedelta(days=days)
     commits = collect_commits(repos, branches, committers_patterns, time_back_scope)
     df = create_commit_dataframe(commits)
+    print(df)
     fig = generate_plot(df)
     save_and_open_plot(fig, 'commit_history_timeline.html', browser)
 
